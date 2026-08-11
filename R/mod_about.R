@@ -58,6 +58,8 @@ Esta aplicación fue diseñada y desarrollada por **Mauricio Moreno, PhD**, con 
 ### Contacto
 
 Para cualquier duda o comentario, puedes contactarme a mi correo electrónico: mmorenozambrano@gmail.com, o a través de mi <a href='https://www.linkedin.com/in/mmorenozam/' target='_blank' rel='noopener noreferrer'>LinkedIn</a>.
+
+Más información acerca de este proyecto y otros, entra a mi <a href='https://mauricio-moreno.net/projects/crime-dashboard/' target='_blank' rel='noopener noreferrer'>página web personal</a>.
         "
       )
     )
