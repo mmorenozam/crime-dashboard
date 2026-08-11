@@ -64,6 +64,8 @@ source(here::here("R/00_Auxiliary_Functions.R"))
 #          03_homicidios.rds
 #          05_pob_parroquias.rds
 
+
+
 # 1. Outline of Quito ####
 
 quito_outline <- st_read(here::here("data_geoportal_raw/area/sec_a.shp")) |>
@@ -73,6 +75,10 @@ quito_outline <- st_union(st_make_valid(quito_outline)) |>
   st_as_sf()
 
 saveRDS(quito_outline, here::here("dashboard/data/01_quito_outline.rds"))
+
+# quito_outline_to_save <- readRDS(here::here("dashboard/data/01_quito_outline.rds"))
+# quito_outline |>
+#   rename(nombre = x)
 
 # 2. Urban and rural parishes of Quito oulines ####
 
@@ -87,10 +93,15 @@ rural <- st_read(here::here("data_geoportal_raw/rural/organizacion_territorial_p
          dpa_despar = toupper(stri_trans_general(dpa_despar, id = "Latin-ASCII"))) |>
   filter(AD_ZONAL != "VARIAS")
 
-quito_parroquias <- bind_rows(urbano, rural) %>%
+quito_parroquias <- bind_rows(urbano, rural) |>
   st_transform(crs = 4326)
 
-saveRDS(quito_parroquias, here::here("dashboard/data/02_quito_parroquias.rds"))
+quito_parroquias_to_save <- bind_rows(urbano, rural) |>
+  rename(nombre_parroquia = dpa_despar) |>
+  select(-AD_ZONAL, -dpa_parroq, -tipo) |>
+  st_transform(crs = 4326)
+
+saveRDS(quito_parroquias_to_save, here::here("dashboard/data/02_quito_parroquias.rds"))
 
 # 3. Wrangling homicide data and detainees ####
 
@@ -148,6 +159,49 @@ parroquias_tipo <- quito_parroquias |>
 
 aprehendidos_uio <- left_join(aprehendidos_uio, parroquias_tipo, by = c("nombre_parroquia" = "dpa_despar")) 
 
+parroquias_area <- quito_parroquias |> 
+  select(dpa_despar, area_hecho = tipo) |> 
+  tibble() |> 
+  select(-geometry)
+
+detenciones <- readRDS(here::here("data_processed/consolidado_uio.rds")) 
+
+detenciones <- detenciones |>
+  mutate(year = format_ISO8601(fecha_detencion_aprehension, precision = "y")) |>
+  mutate(edad_num = as.numeric(edad),
+         grupo_edad  = case_when(
+           is.na(edad_num) ~ "SIN_DATO",
+           edad_num < 18   ~ "Menor de edad",
+           edad_num < 30   ~ "18-29",
+           edad_num < 45   ~ "30-44",
+           edad_num < 60   ~ "45-59",
+           TRUE            ~ "60+")) |>
+  mutate(jerarquia = substr(codigo_iccs, 1, 2))|>
+  mutate(jerarquia_iccs = recode(jerarquia,
+                                 `01` = "01 Homicidios",
+                                 `02` = "02 Lesiones",
+                                 `03` = "03 Delitos sexuales",
+                                 `04` = "04 Contra propiedad o violencia",
+                                 `05` = "05 Contra propiedad solamente",
+                                 `06` = "06 Relacionados con drogas",
+                                 `07` = "07 Fraude, engaño o corrupción",
+                                 `08` = "08 Contra orden público, autoridad o Estado",
+                                 `09` = "09 Contra seguridad pública y del Estado",
+                                 `10` = "10 Contra entorno natural",
+                                 `11` = "11 Otros no clasificados en otra parte",
+                                 `99` = "99 No son parte del ICCS")) |>
+  select(codigo_iccs, tipo, jerarquia_iccs, grupo_edad, sexo, condicion, movilizacion, tipo_arma,
+         fecha_detencion_aprehension, hora_detencion_aprehension, 
+         nombre_parroquia = parroquia_corregida, presunta_infraccion, clase_tipo_lugar, imputada, decode_iccs, longitud, latitud) |>
+  mutate(decode_iccs = case_when(presunta_infraccion == "BOLETAS" ~ "Boletas (sin código ICCS)",
+                                 presunta_infraccion == "APREMIO" ~ "Apremio (sin código ICCS)",
+                                 T ~ decode_iccs)) |>
+  mutate(decode_iccs = case_when(!presunta_infraccion %in% c("BOLETAS", "APREMIO") & codigo_iccs == "9999" ~ paste0(presunta_infraccion, " (sin código ICCS)"),
+                                 T ~ decode_iccs)) |>
+  left_join(parroquias_area, by = c("nombre_parroquia" = "dpa_despar"))
+
+saveRDS(detenciones, here::here("dashboard/data/04_detenciones.rds")) 
+
 # saving outputs para imputation
 
 ## 3e ####
@@ -158,7 +212,7 @@ aprehendidos_uio <- left_join(aprehendidos_uio, parroquias_tipo, by = c("nombre_
 
 ## 3f ####
 
-homicidios <- left_join(homicidios, parroquia_id, by = c("codigo_subcircuito"))
+homicidios_valida <- left_join(homicidios_valida, parroquia_id, by = c("codigo_subcircuito"))
 
 homicidios <- homicidios |>
   mutate(longitud = gsub(",", ".", coordenada_x),
@@ -173,7 +227,24 @@ qc_parroquia_function(df = homicidios,
                       outpath_invalidas = "data_processed/invalidas.rds", 
                       out_path = here::here())
 
-homicidio_valida <- readRDS(here::here("data_processed/validas.rds"))
+homicidio_valida <- readRDS(here::here("data_processed/validas.rds")) |>
+  mutate(year = format_ISO8601(fecha_infraccion, precision = "y")) |>
+  mutate(edad_num = as.numeric(edad),
+         grupo_edad  = case_when(
+           is.na(edad_num) ~ "SIN_DATO",
+           edad_num < 18   ~ "Menor de edad",
+           edad_num < 30   ~ "18-29",
+           edad_num < 45   ~ "30-44",
+           edad_num < 60   ~ "45-59",
+           TRUE            ~ "60+")) |>
+  select(tipo_muerte, tipo_lugar, fecha_infraccion, hora_infraccion,
+         presunta_motivacion, grupo_edad, sexo, nombre_parroquia = parroquia_corregida, arma,
+         year, longitud, latitud, codigo_subcircuito) |>
+  left_join(parroquias_area, by = c("nombre_parroquia" = "dpa_despar"))
+
+
+
+
 saveRDS(homicidio_valida, here::here("dashboard/data/03_homicidios.rds"))
 
 # 4. Population data ####
@@ -210,6 +281,8 @@ proy10_22 <- right_join(codigo_parroquias, proy10_22, by = c("codigo_parroquia")
 pob_parroquias <- bind_rows(proy10_22, proy23_35)
 
 pob_parroquias <- pob_parroquias |>
-  mutate(nombre_parroquia = stri_trans_general(nombre_parroquia, "Latin-ASCII"))
+  mutate(nombre_parroquia = stri_trans_general(nombre_parroquia, "Latin-ASCII")) |>
+  select(nombre_parroquia, year, poblacion = poblacion_parroquia)
 
 saveRDS(pob_parroquias, here::here("dashboard/data/05_pob_parroquias.rds"))
+

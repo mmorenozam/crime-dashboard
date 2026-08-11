@@ -4,7 +4,8 @@ library(stringi)
 library(tidyr)
 library(stringr)
 library(ggplot2)
-
+library(lubridate)
+library(readxl)
 # Function to validate coordinates within the parishes of Quito
 
 qc_parroquia_function <- function(df,
