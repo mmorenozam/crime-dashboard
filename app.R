@@ -15,11 +15,11 @@ library(DT)
 # --- Load helpers & modules -------------------------------------------------
 path <- here::here()
 
-r_files <- list.files(here::here(path,"dashboard/R"), pattern = "\\.R$", full.names = TRUE)
+r_files <- list.files(here::here(path,"R"), pattern = "\\.R$", full.names = TRUE)
 invisible(lapply(r_files, source))
 
 # --- Load data once at app start (shared, read-only, across sessions) -----
-app_data <- load_app_data(data_dir = here::here(path,"dashboard/data"))
+app_data <- load_app_data(data_dir = here::here(path,"data"))
 
 # --- UI ---------------------------------------------------------------------
 ui <- page_navbar(

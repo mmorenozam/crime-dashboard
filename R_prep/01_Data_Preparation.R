@@ -74,9 +74,9 @@ quito_outline <- st_read(here::here("data_geoportal_raw/area/sec_a.shp")) |>
 quito_outline <- st_union(st_make_valid(quito_outline)) |>
   st_as_sf()
 
-saveRDS(quito_outline, here::here("dashboard/data/01_quito_outline.rds"))
+saveRDS(quito_outline, here::here("data/01_quito_outline.rds"))
 
-# quito_outline_to_save <- readRDS(here::here("dashboard/data/01_quito_outline.rds"))
+# quito_outline_to_save <- readRDS(here::here("data/01_quito_outline.rds"))
 # quito_outline |>
 #   rename(nombre = x)
 
@@ -101,7 +101,7 @@ quito_parroquias_to_save <- bind_rows(urbano, rural) |>
   select(-AD_ZONAL, -dpa_parroq, -tipo) |>
   st_transform(crs = 4326)
 
-saveRDS(quito_parroquias_to_save, here::here("dashboard/data/02_quito_parroquias.rds"))
+saveRDS(quito_parroquias_to_save, here::here("data/02_quito_parroquias.rds"))
 
 # 3. Wrangling homicide data and detainees ####
 
@@ -200,7 +200,7 @@ detenciones <- detenciones |>
                                  T ~ decode_iccs)) |>
   left_join(parroquias_area, by = c("nombre_parroquia" = "dpa_despar"))
 
-saveRDS(detenciones, here::here("dashboard/data/04_detenciones.rds")) 
+saveRDS(detenciones, here::here("data/04_detenciones.rds")) 
 
 # saving outputs para imputation
 
@@ -245,7 +245,7 @@ homicidio_valida <- readRDS(here::here("data_processed/validas.rds")) |>
 
 
 
-saveRDS(homicidio_valida, here::here("dashboard/data/03_homicidios.rds"))
+saveRDS(homicidio_valida, here::here("data/03_homicidios.rds"))
 
 # 4. Population data ####
 
@@ -284,5 +284,5 @@ pob_parroquias <- pob_parroquias |>
   mutate(nombre_parroquia = stri_trans_general(nombre_parroquia, "Latin-ASCII")) |>
   select(nombre_parroquia, year, poblacion = poblacion_parroquia)
 
-saveRDS(pob_parroquias, here::here("dashboard/data/05_pob_parroquias.rds"))
+saveRDS(pob_parroquias, here::here("data/05_pob_parroquias.rds"))
 
