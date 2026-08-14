@@ -8,6 +8,12 @@ mod_map_ui <- function(id) {
   leaflet::leafletOutput(ns("map"), height = "650px")
 }
 
+## Above this many filtered points, "Casos" (raw markers) mode switches to
+## clustering automatically -- unclustered SVG/canvas markers at this scale
+## is what actually freezes the browser (e.g. the ~77k-row detenciones
+## dataset). "Casos agrupados" already clusters unconditionally.
+AUTO_CLUSTER_THRESHOLD <- 3000
+
 #' @param id module id
 #' @param filtered_data reactive() returning the filtered event data.frame
 #'   (must contain latitud, longitud, parroquia_key, year)
@@ -25,7 +31,7 @@ mod_map_server <- function(id, filtered_data, map_type, quito_outline,
   moduleServer(id, function(input, output, session) {
     
     output$map <- leaflet::renderLeaflet({
-      leaflet::leaflet() |>
+      leaflet::leaflet(options = leaflet::leafletOptions(preferCanvas = TRUE)) |>
         leaflet::addProviderTiles(leaflet::providers$CartoDB.Positron) |>
         leaflet::addPolygons(
           data = quito_outline, fill = FALSE,
@@ -62,11 +68,22 @@ mod_map_server <- function(id, filtered_data, map_type, quito_outline,
       if (type == "Casos") {
         if (nrow(df) > 0) {
           popup_txt <- build_popup(df, popup_fields)
+          auto_cluster <- nrow(df) > AUTO_CLUSTER_THRESHOLD
           proxy <- proxy |> leaflet::addCircleMarkers(
             data = df, lng = ~as.numeric(longitud), lat = ~as.numeric(latitud),
             radius = 4, stroke = FALSE, fillOpacity = 0.7, color = "#c0392b",
-            popup = popup_txt, group = "points"
+            popup = popup_txt, group = "points",
+            clusterOptions = if (auto_cluster) leaflet::markerClusterOptions() else NULL
           )
+          if (auto_cluster) {
+            proxy <- proxy |> leaflet::addControl(
+              html = sprintf(
+                "<div style=\"background:white;padding:4px 8px;border-radius:4px;font-size:12px;box-shadow:0 1px 4px rgba(0,0,0,0.3);\">%s puntos agrupados automáticamente para mejorar el rendimiento</div>",
+                format(nrow(df), big.mark = ",")
+              ),
+              position = "bottomleft"
+            )
+          }
         }
       } else if (type == "Mapa de calor") {
         if (nrow(df) > 0) {
@@ -118,10 +135,11 @@ mod_map_server <- function(id, filtered_data, map_type, quito_outline,
 }
 
 #' Build a simple HTML popup string vector from selected columns of df.
+#' Vectorized per-column (rather than looping row-by-row with apply()) so
+#' it stays fast on datasets with tens of thousands of rows.
 build_popup <- function(df, fields) {
   fields <- fields[fields %in% names(df)]
   if (length(fields) == 0) return(NULL)
-  apply(df[fields], 1, function(row) {
-    paste(sprintf("<b>%s:</b> %s", fields, row), collapse = "<br>")
-  })
+  parts <- lapply(fields, function(f) sprintf("<b>%s:</b> %s", f, as.character(df[[f]])))
+  do.call(paste, c(parts, sep = "<br>"))
 }

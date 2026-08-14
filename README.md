@@ -1,9 +1,17 @@
 # Homicidios y Detenciones en Quito — Dashboard (POC)
 
-A modular multi-page Shiny application (bslib `page_navbar()`) exploring
-homicide and arrest records for Quito, with independent reactive pipelines
-per page, Leaflet maps, trend visualizations, summary tables, and a
-downloadable raw-data view.
+A modular multi-page Shiny application (bslib `page_navbar()`) that brings
+together individual-level homicide and arrest/detention records for the
+Distrito Metropolitano de Quito (sourced from Ecuador's Ministerio del
+Interior open-data portal) into one exploratory tool. It lets analysts see
+*where*, *when*, and under what circumstances these events happen, and
+compare raw case counts against population-adjusted incidence rates across
+parishes and years — via independent reactive pipelines per page, four
+Leaflet map modes (case locations, heatmap, clustered markers, incidence
+choropleth), trend visualizations, summary tables, and a downloadable
+raw-data view. The full narrative (purpose, data sources, methodology,
+usage guide) lives in the app's own **About** page
+(`R/mod_about.R`) — this README stays focused on the codebase.
 
 ## Project structure
 
@@ -19,10 +27,19 @@ crime-dashboard/
 │   ├── mod_raw_table.R          # shared searchable/sortable/downloadable table module
 │   ├── mod_homicides.R          # Homicides page: sidebar + reactive pipeline + wiring
 │   ├── mod_arrests.R            # Arrests page: sidebar + reactive pipeline + wiring
-│   └── mod_about.R              # About page (static content)
-├── data/                        # place the 5 input RDS files here (see below)
+│   └── mod_about.R              # About page (static content: purpose, sources, usage guide)
+├── data/                        # the 5 RDS files the deployed app actually reads (tracked in git)
+├── R_prep/                      # offline pipeline that builds data/*.rds from raw sources (not run by the app)
+│   ├── 00_Auxiliary_Functions.R # e.g. spatial QC of event coordinates against parish polygons
+│   └── 01_Data_Preparation.R    # reads data_geoportal_raw/ + data_crimen_raw/ + population/, writes data/*.rds
+├── data_geoportal_raw/          # raw parish/outline shapefiles (gitignored, confidential/large)
+├── data_crimen_raw/             # raw homicide & detention source files (gitignored, confidential)
+├── data_processed/              # intermediate outputs of R_prep (gitignored)
+├── population/                  # raw population projection inputs consumed by R_prep
 ├── scripts/
-│   └── generate_sample_data.R   # generates synthetic RDS files for smoke-testing
+│   ├── generate_sample_data.R   # generates synthetic RDS files for smoke-testing without real data
+│   └── simplify_polygons.R      # one-off: simplifies data/01 & 02 *.rds in place for map performance (see below)
+├── manifest.json                # rsconnect deployment manifest (package snapshot for Posit Cloud/Connect)
 └── README.md
 ```
 
@@ -41,6 +58,13 @@ strips the numeric prefixes, reprojects spatial layers to WGS84, and
 builds a normalized `parroquia_key` join key across all four tabular/
 spatial layers (upper-cased, trimmed) so parish names match reliably
 between the crime data, the population table, and the parish polygons.
+
+These 5 files are themselves generated offline from confidential/large raw
+sources by `R_prep/01_Data_Preparation.R` (shapefiles in
+`data_geoportal_raw/`, crime records in `data_crimen_raw/`, population
+projections in `population/`). The app never touches `R_prep/` or the raw
+folders at runtime — only the finished `data/*.rds` files matter for
+deployment.
 
 ## Running the app
 
@@ -99,6 +123,42 @@ between the crime data, the population table, and the parish polygons.
   column-level filters plus a `downloadHandler()` emitting the currently
   filtered rows as CSV.
 
+## Performance
+
+Early deployments to Posit Cloud were slow to render, mainly because of two
+compounding issues: the parish/outline polygons carried far more detail than
+a web map needs, and `detenciones` (~77k rows) could get plotted as tens of
+thousands of individual unclustered markers. Fixes so far:
+
+- **Simplified boundary polygons.** `quito_outline` and `quito_parroquias`
+  are redrawn on *every* page load regardless of any filter, so their vertex
+  count is pure fixed overhead. `scripts/simplify_polygons.R` runs
+  topology-preserving simplification (`rmapshaper::ms_simplify`, keeping
+  parish borders seamless — no slivers/gaps) and overwrites `data/01_*.rds`
+  / `data/02_*.rds` in place:
+  - `01_quito_outline.rds`: 157k → 9.4k vertices (1.95 MB → 0.13 MB)
+  - `02_quito_parroquias.rds`: 575k → 37.6k vertices (7.46 MB → 0.49 MB)
+
+  This is a one-off, re-runnable script (`Rscript scripts/simplify_polygons.R`),
+  not part of the app's startup path. If the source shapefiles are ever
+  regenerated via `R_prep/01_Data_Preparation.R`, re-run it afterwards.
+- **Canvas rendering.** `mod_map.R` builds the Leaflet map with
+  `leafletOptions(preferCanvas = TRUE)`, which is substantially faster than
+  the SVG default once marker counts get into the thousands.
+- **Vectorized popups.** `build_popup()` used to loop row-by-row with
+  `apply()`; it's now vectorized per-column, which matters once the
+  filtered set reaches tens of thousands of rows.
+- **Auto-clustering on large point sets.** In "Casos" (raw marker) mode,
+  plotting every individual point is what actually freezes the browser at
+  scale. Past `AUTO_CLUSTER_THRESHOLD` (3,000 filtered points, defined in
+  `mod_map.R`), the map silently switches to marker clustering — same as
+  "Casos agrupados" already does — and shows a small on-map note explaining
+  why.
+
+If the underlying datasets keep growing, the next lever to pull is
+downsampling/pre-aggregating points server-side before they ever reach
+Leaflet, rather than relying on client-side clustering alone.
+
 ## Known simplifications in this POC
 
 - The synthetic data generator (`scripts/generate_sample_data.R`) produces
@@ -112,6 +172,6 @@ between the crime data, the population table, and the parish polygons.
 
 ## Credits
 
-Project author: you (the dashboard owner). Implementation ideas and code
+Project author: Mauricio Moreno, PhD. Implementation ideas and code
 scaffolding assistance: ChatGPT and Claude (AI assistants), as reflected in the About
 page of the running application.
