@@ -122,3 +122,5 @@ saveRDS(detenciones,      "data/04_detenciones.rds")
 saveRDS(pob_parroquias,   "data/05_pob_parroquias.rds")
 
 cat("Synthetic sample data written to data/\n")
+
+
